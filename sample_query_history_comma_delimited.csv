@@ -1,0 +1,4 @@
+"query_id","catalog","schema","principal","usr","query","query_type","create_time","end_time"
+"20231030_173517_00051_k8fah",,,"admin","admin","select *\nfrom system.runtime.queries\nwhere state = 'FINISHED'","SELECT","1.698687317684E9","2023-10-30 17:35:23.886000 UTC"
+"20231030_173520_00052_k8fah","system",,"test","test","select node_id, http_uri, node_version, coordinator, state\nfrom ""runtime"".""nodes""","SELECT","1.698687317684E9","2023-10-30 17:35:25.086000 UTC"
+"20231030_173521_00053_k8fah","system","metadata","service","service","select * from\ncatalogs","SELECT","1.698687317684E9","2023-10-30 17:35:21.385000 UTC"
