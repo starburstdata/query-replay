@@ -1,12 +1,12 @@
 # Query Replay
 
-[QueryReplay.py](https://github.com/starburstdata/query-replay/QueryReplay.py) is a python script that can replay queries with the original execution cadence.  The replayer uses threads to time query submission in an attempt to emulate the original query concurrency.  It uses the [trino-python-client](https://github.com/trinodb/trino-python-client) to submit the queries to a SEP/Galaxy/Trino cluster and optionally also retrieve the query history from the same or different SEP/Galaxy/Trino cluster.  
+[QueryReplay.py](https://github.com/starburstdata/query-replay/blob/main/QueryReplay.py) is a python script that can replay queries with the original execution cadence.  The replayer uses threads to time query submission in an attempt to emulate the original query concurrency.  It uses the [trino-python-client](https://github.com/trinodb/trino-python-client) to submit the queries to a SEP/Galaxy/Trino cluster and optionally also retrieve the query history from the same or different SEP/Galaxy/Trino cluster.  
 
 Queries can be replayed for troubleshooting to attempt to replicate and issue that only seems to happen with specific cluster load.  It can also be a way to test new cluster configuration on a secondary cluster before rolling changes out to production.
 
 The queries to be replayed can be retrieved from source cluster that has a catalog configured to access an Insights database, or a copy of the completed_queries table made available in some other catalog.  The queries can also be provided in a CSV, TSV, or pipe-delimited file.  
 
-This is the query used to retrieve the queries to be replayed when the source is set to SEP. If query history is provided with a delimited file the same columns are expected.  See example [CSV](https://github.com/starburstdata/query-replay/sample_query_history_comma_delimited.csv), [TSV](https://github.com/starburstdata/query-replay/sample_query_history_tab_delimited.tsv), and [pipe-delimited](https://github.com/starburstdata/query-replay/sample_query_history_pipe_delimited.txt) files.
+This is the query used to retrieve the queries to be replayed when the source is set to SEP. If query history is provided with a delimited file the same columns are expected.  See example [CSV](https://github.com/starburstdata/query-replay/blob/main/sample_query_history_comma_delimited.csv), [TSV](https://github.com/starburstdata/query-replay/blob/main/sample_query_history_tab_delimited.tsv), and [pipe-delimited](https://github.com/starburstdata/query-replay/blob/main/sample_query_history_pipe_delimited.txt) files.
 ```console
 SELECT
   query_id, catalog, schema, principal, usr, query, query_type,
@@ -34,7 +34,7 @@ python queryReplay.py
 - Suggestion: Increase ulimit openfiles to a high number in the client running the QueryReplay.py script.
 
 ## Configuration
-All configuration is read from a [config.properties](https://github.com/starburstdata/query-replay/config.properties) file that should be in the same directory as the QueryReplay.py script.  See example configuration provided.
+All configuration is read from a [config.properties](https://github.com/starburstdata/query-replay/blob/main/config.properties) file that should be in the same directory as the QueryReplay.py script.  See example configuration provided.
 
 ## Authentication
 The replayer supports username/password authentication.  The credentials used for the destination cluster should be able to run queries or impersonate the users that ran the queries originally.
