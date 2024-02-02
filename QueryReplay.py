@@ -18,6 +18,8 @@ from datetime import datetime
 import base64
 from jproperties import Properties
 import signal
+import os
+from trino.dbapi import Cursor
 
 ## Retrieve query history
 ## 1) it can be retrieved from the same cluster where it is going to be replayed (insights catalog or a copy of the insights completed_queries table in some other catalog most be available)
@@ -33,14 +35,20 @@ import signal
 
 class QueryReplay:
   def __init__(self) -> None:
-    self.connections = {};
+    self.connections = {}
     self.queries = None
+    self.running_queries = {}
+    self.using_blackhole_catalog = False
     logging.getLogger().setLevel(logging.INFO)
 
   def __interrupt_handler(self, signum, frame):
     global RUNNING
     if RUNNING:
       RUNNING=False
+      if self.using_blackhole_catalog:
+        self.__cancelAllRunningQueries()
+        self.__closeConnections()
+        os._exit(1)
 
   def __loadConfig(self):
     logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - loading configuration")
@@ -69,7 +77,7 @@ class QueryReplay:
   def __addConnection(self, name: str, _host: str, _port: int, _username: str, _user: str, _catalog: str, _schema: str, _password: str = None, _https: bool = False):
     logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - adding connection: " + name)
     http_scheme = 'https' if _https else 'http'
-    conn = None;
+    conn = None
     if _password:
       conn = trino.dbapi.connect(
         host=_host,
@@ -90,9 +98,9 @@ class QueryReplay:
     self.connections[name] = conn
     return conn
 
-  def __removeConnection(self, name: str):
+  def __closeConnection(self, name: str):
     logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - closing connection: " + name)
-    conn = self.connections.pop(name)
+    conn = self.connections.get(name)
     conn.close()
 
   def __getConnection(self, name: str):
@@ -101,10 +109,6 @@ class QueryReplay:
   def __closeConnections(self):
     logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - closing connections")
     for conn in self.connections.values():
-      try:
-        conn.cursor().close()
-      except:
-        pass
       conn.close()
 
   def __retrieveQueryHistoryFromSEP(self, table: str, startTime: str, endTime: str, conn: str = 'src'):
@@ -138,21 +142,22 @@ class QueryReplay:
     uniqueConn = bool(config.get('queries-dst.unique-connection-per-query'))
 
     conn = None
-    if uniqueConn:
-      conn = self.__addConnection(
-        name=threadName,
-        _host=config.get('queries-dst.host'),
-        _port=int(config.get('queries-dst.port')),
-        _username=config.get('queries-dst.username'),
-        _user=user if bool(config.get('queries-dst.impersonate-query-user')) else config.get('queries-dst.username'),
-        _catalog=catalog,
-        _schema=schema,
-        _password=config.get('queries-dst.password'),
-        _https=bool(config.get('queries-dst.ssl')))
-    else:
-      conn = self.__getConnection('dst')
+    if RUNNING:
+      if uniqueConn:
+        conn = self.__addConnection(
+          name=threadName,
+          _host=config.get('queries-dst.host'),
+          _port=int(config.get('queries-dst.port')),
+          _username=config.get('queries-dst.username'),
+          _user=user if bool(config.get('queries-dst.impersonate-query-user')) else config.get('queries-dst.username'),
+          _catalog=catalog,
+          _schema=schema,
+          _password=config.get('queries-dst.password'),
+          _https=bool(config.get('queries-dst.ssl')))
+      else:
+        conn = self.__getConnection('dst')
 
-    cur = conn.cursor()
+      cur = conn.cursor()
 
     while RUNNING and datetime.timestamp(datetime.now()) < runtime:
       pass
@@ -169,7 +174,11 @@ class QueryReplay:
 
     if RUNNING:
       logging.info(threadName + ": " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - running query")
-      cur.execute(query)
+      self.__addRunningQuery(name=threadName, cur=cur)
+      try:
+        cur.execute(query)
+      except Exception as error:
+        logging.error(error)
 
       while True:
         if not RUNNING:
@@ -184,8 +193,8 @@ class QueryReplay:
       logging.info(threadName + ": " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - query complete")
       cur.close()
 
-    if uniqueConn:
-      self.__removeConnection(threadName)
+    if uniqueConn and conn is not None:
+      self.__closeConnection(threadName)
 
   def __runQueries(self, config: dict):
     try:
@@ -227,7 +236,7 @@ class QueryReplay:
 
         if RUNNING:
           if runQueriesSequentially:
-            self.__run_query('Query # ' + str(i), catalog, schema, queryText, user, datetime.timestamp(datetime.now()), config, blackholeSchema)
+            self.__run_query('Query ' + str(i), catalog, schema, queryText, user, datetime.timestamp(datetime.now()), config, blackholeSchema)
           else:
             t = threading.Thread(target=self.__run_query, kwargs={'threadName': 'Thread ' + str(i), 'catalog': catalog, 'schema': schema, 'query': queryText, 'user': user, 'runtime': + now + gap, 'config': config, 'blackholeSchema': blackholeSchema})
             threads.append(t)
@@ -240,14 +249,30 @@ class QueryReplay:
     except Exception as error:
       logging.error(error)
 
+  def __addRunningQuery(self, name: str, cur: Cursor):
+    logging.debug(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - adding running query: " + name)
+    self.running_queries[name] = cur
+
+  def __removeRunningQuery(self, name: str):
+    logging.debug(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - remove running query: " + name)
+    self.running_queries.pop(name)
+
+  def __cancelAllRunningQueries(self):
+    logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - cancelling all running queries")
+    for cur in self.running_queries.values():
+      try:
+        cur.close()
+      except:
+        pass
+
   def main(self):
+    config = self.__loadConfig()
+
+    self.__validateConfig()
+
+    self.using_blackhole_catalog = config.get('queries-dst.blackhole-catalog') is not None
+
     signal.signal(signal.SIGINT, self.__interrupt_handler)
-
-    if RUNNING:
-      config = self.__loadConfig()
-
-    if RUNNING:
-      self.__validateConfig()
 
     src = config.get('queries-src.type')
 
