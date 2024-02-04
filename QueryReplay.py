@@ -53,8 +53,15 @@ class QueryReplay:
   def __loadConfig(self):
     logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - loading configuration")
     configs = Properties()
-    with open('config.properties', 'rb') as read_prop:
-      configs.load(read_prop)
+    try:
+      with open('config.properties', 'rb') as read_prop:
+        configs.load(read_prop)
+    except FileNotFoundError as fileNotFoundError:
+      logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - config.properties file not found")
+      os._exit(1)
+    except Exception as error:
+      logging.error(error)
+      os._exit(1)
 
     props = {}
 
@@ -71,8 +78,181 @@ class QueryReplay:
 
     return props
 
-  def __validateConfig(self):
-    return True
+  def __validateConfig(self, config: dict):
+    validConfig = True
+
+    queries_src_type = config.get('queries-src.type')
+    queries_src_filename = config.get('queries-src.filename')
+    queries_src_host = config.get('queries-src.host')
+    queries_src_port = config.get('queries-src.port')
+    queries_src_ssl = config.get('queries-src.ssl')
+    queries_src_username = config.get('queries-src.username')
+    queries_src_password = config.get('queries-src.password')
+    queries_src_queries_table = config.get('queries-src.insights-queries-table')
+    queries_starttime = config.get('queries.startTime')
+    queries_endtime = config.get('queries.endTime')
+    queries_dst_host = config.get('queries-dst.host')
+    queries_dst_port = config.get('queries-dst.port')
+    queries_dst_ssl = config.get('queries-dst.ssl')
+    queries_dst_username = config.get('queries-dst.username')
+    queries_dst_password = config.get('queries-dst.password')
+    queries_dst_unique_connection_per_query = config.get('queries-dst.unique-connection-per-query')
+    queries_dst_impersonate_query_user = config.get('queries-dst.impersonate-query-user')
+    queries_dst_blackhole_catalog = config.get('queries-dst.blackhole-catalog')
+    queries_run_sequentially = config.get('queries.run-sequentially')
+
+    if queries_src_type == None:
+      logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-src.type is required")
+      validConfig = False
+    elif queries_src_type.lower() not in ['sep', 'csv-file', 'tsv-file', 'pipe-delimited-file']:
+      logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries-src.type is '" + queries_src_type + "', valid values are 'sep', 'csv-file', 'tsv-file', or 'pipe-delimited-file'")
+      validConfig = False
+
+    if queries_src_type.lower() in ['csv-file', 'tsv-file', 'pipe-delimited-file']:
+      if queries_src_filename == None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-src.filename is required")
+        validConfig = False
+      elif not os.path.isfile(queries_src_filename):
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: file " + queries_src_filename  + " not found")
+        validConfig = False
+
+      if queries_src_host is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.host will not be used")
+
+      if queries_src_port is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.port will not be used")
+
+      if queries_src_ssl is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.ssl will not be used")
+
+      if queries_src_username is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.username will not be used")
+
+      if queries_src_password is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.password will not be used")
+
+      if queries_src_queries_table is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.insights-queries-table will not be used")
+
+      if queries_starttime is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries.startTime will not be used")
+
+      if queries_endtime is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries.endTime will not be used")
+
+    if queries_src_type.lower() == 'sep':
+      if queries_src_host == None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-src.host is required")
+        validConfig = False
+
+      if queries_src_port is None:
+        config['queries-src.port'] = '8080'
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries-src.port to 8080")
+      elif not queries_src_port.isnumeric():
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries-src.port '" + queries_src_port  + "' is not a number")
+        validConfig = False
+
+      if queries_src_ssl is None:
+        config['queries-src.ssl'] = 'false'
+        queries_src_ssl = 'false'
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries-src.ssl to false")
+      elif queries_src_ssl.lower() not in ['true', 'false', '1', '0']:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries_src_ssl is '" + queries_src_ssl  + "', valid values are 'true', 'false', '1', or '0'")
+        validConfig = False
+
+      if queries_src_ssl.lower() in ['true', '1']:
+        if queries_src_username is None:
+          logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-src.username is required")
+          validConfig = False
+
+        if queries_src_password is None:
+          logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-src.password is required")
+          validConfig = False
+
+      if queries_src_queries_table is None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-src.insights-queries-table is required")
+        validConfig = False
+
+      if queries_starttime is None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries.startTime is required")
+        validConfig = False
+
+      if queries_endtime is None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries.endTime is required")
+        validConfig = False
+
+      try:
+        res = datetime.strptime(queries_starttime, "%Y-%m-%d %H:%M:%S %Z")
+      except ValueError:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries.startTime is not a valid timestamp")
+        validConfig = False
+
+      try:
+        res = datetime.strptime(queries_endtime, "%Y-%m-%d %H:%M:%S %Z")
+      except ValueError:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries.endTime is not a valid timestamp")
+        validConfig = False
+
+      if queries_src_filename is not None:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-src.filename will not be used")
+
+    if queries_dst_host == None:
+      logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-dst.host is required")
+      validConfig = False
+
+    if queries_dst_port is None:
+      config['queries-dst.port'] = '8080'
+      logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries-dst.port to 8080")
+    elif not queries_dst_port.isnumeric():
+      logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries-dst.port '" + queries_dst_port  + "' is not a number")
+      validConfig = False
+
+    if queries_dst_ssl is None:
+      config['queries-dst.ssl'] = 'false'
+      queries_dst_ssl = 'false'
+      logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries-dst.ssl to false")
+    elif queries_dst_ssl.lower() not in ['true', 'false', '1', '0']:
+      logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries_dst_ssl is '" + queries_dst_ssl  + "', valid values are 'true', 'false', '1', or '0'")
+      validConfig = False
+
+    if queries_dst_ssl.lower() in ['true', '1']:
+      if queries_dst_username is None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-dst.username is required")
+        validConfig = False
+
+      if queries_dst_password is None:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration missing: queries-dst.password is required")
+        validConfig = False
+
+    if queries_dst_unique_connection_per_query is not None:
+      if queries_dst_unique_connection_per_query.lower() not in ['true', 'false', '1', '0']:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries-dst.unique-connection-per-query is '" + queries_dst_unique_connection_per_query + "', valid values are 'true', 'false', '1', or '0'")
+        validConfig = False
+    else:
+      config['queries-dst.unique-connection-per-query'] = 'false'
+      queries_dst_unique_connection_per_query = 'false'
+      logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries-dst.unique-connection-per-query to false")
+
+    if queries_dst_impersonate_query_user is not None:
+      if queries_dst_impersonate_query_user.lower() not in ['true', 'false', '1', '0']:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries-dst.impersonate-query-user is '" + queries_dst_impersonate_query_user + "', valid values are 'true', 'false', '1', or '0'")
+        validConfig = False
+      elif queries_dst_unique_connection_per_query.lower() in ['false', '0']:
+        logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration ignored: queries-dst.impersonate-query-user will not be used")
+    else:
+      config['queries-dst.impersonate-query-user'] = 'false'
+      logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries-dst.impersonate-query-user to false")
+
+    if queries_run_sequentially is not None:
+      if queries_run_sequentially.lower() not in ['true', 'false', '1', '0']:
+        logging.error(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration invalid: queries.run-sequentially is '" + queries_run_sequentially + "', valid values are 'true', 'false', '1', or '0'")
+        validConfig = False
+    else:
+      config['queries.run-sequentially'] = 'false'
+      logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - configuration default: setting queries.run-sequentially to false")
+
+    if not validConfig:
+      os._exit(1)
 
   def __addConnection(self, name: str, _host: str, _port: int, _username: str, _user: str, _catalog: str, _schema: str, _password: str = None, _https: bool = False):
     logging.info(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - adding connection: " + name)
@@ -139,7 +319,7 @@ class QueryReplay:
   def __run_query(self, threadName: str, catalog: str, schema: str, query: str, user: str, runtime: float, config: dict, blackholeSchema: str):
     logging.info(threadName + ": " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " - run query thread started")
 
-    uniqueConn = bool(config.get('queries-dst.unique-connection-per-query'))
+    uniqueConn = config.get('queries-dst.unique-connection-per-query').lower() in ['true', '1']
 
     conn = None
     if RUNNING:
@@ -149,11 +329,11 @@ class QueryReplay:
           _host=config.get('queries-dst.host'),
           _port=int(config.get('queries-dst.port')),
           _username=config.get('queries-dst.username'),
-          _user=user if bool(config.get('queries-dst.impersonate-query-user')) else config.get('queries-dst.username'),
+          _user=user if config.get('queries-dst.impersonate-query-user').lower() in ['true', '1'] else config.get('queries-dst.username'),
           _catalog=catalog,
           _schema=schema,
           _password=config.get('queries-dst.password'),
-          _https=bool(config.get('queries-dst.ssl')))
+          _https=config.get('queries-dst.ssl').lower() in ['true', '1'])
       else:
         conn = self.__getConnection('dst')
 
@@ -211,7 +391,7 @@ class QueryReplay:
       threads = list()
       runQueriesSequentially = False
       if config.get('queries.run-sequentially'):
-        runQueriesSequentially = bool(config.get('queries.run-sequentially'))
+        runQueriesSequentially = config.get('queries.run-sequentially').lower() in ['true', '1']
 
       i = 0
       for query in self.queries:
@@ -268,7 +448,7 @@ class QueryReplay:
   def main(self):
     config = self.__loadConfig()
 
-    self.__validateConfig()
+    self.__validateConfig(config)
 
     self.using_blackhole_catalog = config.get('queries-dst.blackhole-catalog') is not None
 
@@ -286,7 +466,7 @@ class QueryReplay:
         _catalog='system',
         _schema='runtime',
         _password=config.get('queries-src.password'),
-        _https=bool(config.get('queries-src.ssl')))
+        _https=config.get('queries-src.ssl').lower() in ['true', '1'])
 
       self.__retrieveQueryHistoryFromSEP(
         table=config.get('queries-src.insights-queries-table'),
