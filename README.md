@@ -1,5 +1,7 @@
 # Query Replay
 
+# THIS TOOL IS NOT OFFICIALLY SUPPORTED BY STARBURST DATA.  IT WAS CREATED BY OUR PROFESSIONAL SERVICES TEAM TO AID WITH SPECIFIC USE CASES.
+
 [QueryReplay.py](https://github.com/starburstdata/query-replay/blob/main/QueryReplay.py) is a python script that can replay queries with the original execution cadence.  The replayer uses threads to time query submission in an attempt to emulate the original query concurrency.  It uses the [trino-python-client](https://github.com/trinodb/trino-python-client) to submit the queries to a SEP/Galaxy/Trino cluster and optionally also retrieve the query history from the same or different SEP/Galaxy/Trino cluster.  
 
 Queries can be replayed for troubleshooting to attempt to replicate and issue that only seems to happen with specific cluster load.  It can also be a way to test new cluster configuration on a secondary cluster before rolling changes out to production.
