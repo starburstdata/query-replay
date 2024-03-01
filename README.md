@@ -4,9 +4,9 @@
 
 [QueryReplay.py](https://github.com/starburstdata/query-replay/blob/main/QueryReplay.py) is a python script that can replay queries with the original execution cadence.  The replayer uses threads to time query submission in an attempt to emulate the original query concurrency.  It uses the [trino-python-client](https://github.com/trinodb/trino-python-client) to submit the queries to a SEP/Galaxy/Trino cluster and optionally also retrieve the query history from the same or different SEP/Galaxy/Trino cluster.  
 
-Queries can be replayed for troubleshooting to attempt to replicate and issue that only seems to happen with specific cluster load.  It can also be a way to test new cluster configuration on a secondary cluster before rolling changes out to production.
+Queries can be replayed for troubleshooting to attempt to replicate an issue that only seems to happen with specific cluster load.  It can also be a way to test new cluster configuration on a secondary cluster before rolling changes out to production.
 
-The queries to be replayed can be retrieved from source cluster that has a catalog configured to access an Insights database, or a copy of the completed_queries table made available in some other catalog.  The queries can also be provided in a CSV, TSV, or pipe-delimited file.  
+The queries to be replayed can be retrieved from a source cluster that has a catalog configured to access an Insights database, or a copy of the completed_queries table made available in some other catalog.  The queries can also be provided in a CSV, TSV, or pipe-delimited file.  
 
 This is the query used to retrieve the queries to be replayed when the source is set to SEP. If query history is provided with a delimited file the same columns are expected.  See example [CSV](https://github.com/starburstdata/query-replay/blob/main/sample_query_history_comma_delimited.csv), [TSV](https://github.com/starburstdata/query-replay/blob/main/sample_query_history_tab_delimited.tsv), and [pipe-delimited](https://github.com/starburstdata/query-replay/blob/main/sample_query_history_pipe_delimited.txt) files.
 ```console
@@ -20,7 +20,7 @@ WHERE create_time >= timestamp '<startTime>'
 ORDER BY create_time
 ```
 
-**IMPORTANT: As you can see the query above limits queries to SELECT statements.  There is no additional filtering or validation of the SQL statement type when queries are provided via file.  It is the responsibility of the user running the script to provide only statements that the are ok to be rerun.  It is fine to include CREATE, UPDATE, and DELETE statements as long as it is intended and the outcome understood.  Also, those kind of statements are not compatible with using the blackhole catalog option, see more below.**
+**IMPORTANT: As you can see the query above limits queries to SELECT statements.  There is no additional filtering or validation of the SQL statement type when queries are provided via file.  It is the responsibility of the user running the script to provide only statements that are ok to be rerun.  It is fine to include CREATE, UPDATE, and DELETE statements as long as it is intended and the outcome is understood.  Also, those kinds of statements are not compatible with using the blackhole catalog option, see more below.**
 
 ## Example Usage
 ```console
@@ -29,14 +29,14 @@ python queryReplay.py
 
 ## Requirements
 - Python3
-- trino-python-client package
+- Python packages: trino (trino-python-client), jproperties, rich.
 - completed_queries table queryable from source SEP cluster or queries list in CSV, TSV, or pipe-delimited file.
 - The credentials for the source cluster should be allowed to query the completed_queries table.
 - The credentials for the destination cluster should be able to run queries or impersonate the users that ran the queries originally.
 - Suggestion: Increase ulimit openfiles to a high number in the client running the QueryReplay.py script.
 
 ## Configuration
-All configuration is read from a [config.properties](https://github.com/starburstdata/query-replay/blob/main/config.properties) file that should be in the same directory as the QueryReplay.py script.  See example configuration provided.
+All configuration is read from a [config.properties](https://github.com/starburstdata/query-replay/blob/main/config.properties) file that should be in the same directory as the QueryReplay.py script.  See the example configuration provided.
 
 ## Authentication
 The replayer supports username/password authentication.  The credentials used for the destination cluster should be able to run queries or impersonate the users that ran the queries originally.
@@ -54,3 +54,6 @@ One known issue is that queries with non-unique column names will fail when usin
 
 ## Run queries sequentially
 Optionally queries can be run sequentially if desired `queries.run-sequentially=True`, in the order that they are provided.  Each query will be executed once the previous one completes or fails.
+
+## Interruption handling
+Ctrl+C can be used to stop execution at any time.  In-flight queries will be canceled.
