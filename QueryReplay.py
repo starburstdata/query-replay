@@ -92,11 +92,12 @@ class QueryReplay:
     for item in configs.items():
       key = item[0]
 
-      value = ""
+      value = configs.get(key).data
       try:
-        value = base64.b64decode(configs.get(key).data).decode("utf-8").replace('\n', '')
+        if  (key.endswith('username') or key.endswith('password')) and self.__isBase64(value):
+          value = base64.b64decode(value).decode("utf-8").replace('\n', '')
       except:
-        value = configs.get(key).data
+        logging.warn(key + " is not a string")
 
       props[key] = value
 
@@ -520,6 +521,19 @@ class QueryReplay:
   @synchronized(lock)
   def __incrementCompletedQueries(self):
     self.completed_queries = self.completed_queries + 1
+
+  def __isBase64(self, sb):
+    try:
+      if isinstance(sb, str):
+        # If there's any unicode here, an exception will be thrown and the function will return false
+        sb_bytes = bytes(sb, 'ascii')
+      elif isinstance(sb, bytes):
+        sb_bytes = sb
+      else:
+        raise ValueError("Argument must be string or bytes")
+      return base64.b64encode(base64.b64decode(sb_bytes)) == sb_bytes
+    except Exception:
+      return False
 
   def main(self):
     config = self.__loadConfig()
