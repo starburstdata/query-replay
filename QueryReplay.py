@@ -128,7 +128,6 @@ class QueryReplay:
     queries_dst_password = config.get('queries-dst.password')
     queries_dst_unique_connection_per_query = config.get('queries-dst.unique-connection-per-query')
     queries_dst_impersonate_query_user = config.get('queries-dst.impersonate-query-user')
-    queries_dst_blackhole_catalog = config.get('queries-dst.blackhole-catalog')
     queries_run_sequentially = config.get('queries.run-sequentially')
     logging_level = config.get('logging.level')
 
@@ -325,6 +324,25 @@ class QueryReplay:
     if not validConfig:
       os._exit(1)
 
+  def __validateBlackholeCatalog(self, config: dict):
+    logging.info("validating blackhole catalog")
+    validConfig = True
+
+    queries_dst_blackhole_catalog = config.get('queries-dst.blackhole-catalog')
+
+    if RUNNING:
+      if queries_dst_blackhole_catalog is not None:
+        try:
+          conn = self.__getConnection('dst')
+          cur = conn.cursor()
+          cur.execute('USE ' + queries_dst_blackhole_catalog + '.default')
+        except Exception as error:
+          validConfig = False
+          logging.error(error)
+
+    if not validConfig:
+      os._exit(1)
+
   def __addConnection(self, name: str, _host: str, _port: int, _username: str, _user: str, _catalog: str, _schema: str, _password: str = None, _https: bool = False, _validate_cert: bool = True):
     logging.debug("adding connection: " + name)
     http_scheme = 'https' if _https else 'http'
@@ -395,7 +413,7 @@ class QueryReplay:
     self.total_queries = len(self.queries)
     logging.info(str(len(self.queries)) + " queries to be run")
 
-  def __run_query(self, threadName: str, catalog: str, schema: str, query: str, user: str, runtime: float, config: dict, blackholeSchema: str):
+  def __run_query(self, threadName: str, catalog: str, schema: str, query: str, user: str, runtime: float, config: dict, blackholeCatalog: str):
     logging.info(threadName + ": run query thread started")
 
     progress.update(TASK1, completed=self.submitted_queries, total=self.total_queries, refresh=True)
@@ -435,8 +453,8 @@ class QueryReplay:
         except Exception as error:
           logging.error(error)
 
-      if blackholeSchema:
-        query = 'CREATE TABLE ' + blackholeSchema + '.' + threadName.replace(' ', '') + ' AS \n' + query
+      if blackholeCatalog:
+        query = 'CREATE TABLE ' + blackholeCatalog + '.default."' + datetime.now().strftime("%Y%m%d_%H%M%S") + '_' + threadName.replace(' ', '') + '" AS \n' + query
 
     if RUNNING:
       logging.info(threadName + ": running query")
@@ -477,15 +495,7 @@ class QueryReplay:
       now = datetime.timestamp(datetime.now()) + 10
       gap = 0
 
-      blackholeSchema = None
-      if config.get('queries-dst.blackhole-catalog'):
-        blackholeSchema = config.get('queries-dst.blackhole-catalog') + "." + "test_" + datetime.now().strftime("%Y%m%d_%H%M%S")
-        logging.debug("create blackhole schema: " + blackholeSchema)
-        try:
-          cur = self.__getConnection('dst').cursor()
-          cur.execute('CREATE SCHEMA ' + blackholeSchema)
-        except Exception as error:
-          logging.error(error)
+      blackholeCatalog = config.get('queries-dst.blackhole-catalog')
 
       threads = list()
       runQueriesSequentially = False
@@ -515,9 +525,9 @@ class QueryReplay:
 
         if RUNNING:
           if runQueriesSequentially:
-            self.__run_query('Query ' + str(i), catalog, schema, queryText, user, datetime.timestamp(datetime.now()), config, blackholeSchema)
+            self.__run_query('Query ' + str(i), catalog, schema, queryText, user, datetime.timestamp(datetime.now()), config, blackholeCatalog)
           else:
-            t = threading.Thread(target=self.__run_query, kwargs={'threadName': 'thread ' + str(i), 'catalog': catalog, 'schema': schema, 'query': queryText, 'user': user, 'runtime': + now + gap, 'config': config, 'blackholeSchema': blackholeSchema})
+            t = threading.Thread(target=self.__run_query, kwargs={'threadName': 'thread ' + str(i), 'catalog': catalog, 'schema': schema, 'query': queryText, 'user': user, 'runtime': + now + gap, 'config': config, 'blackholeCatalog': blackholeCatalog})
             threads.append(t)
             t.start()
 
@@ -584,6 +594,22 @@ class QueryReplay:
 
     signal.signal(signal.SIGINT, self.__interrupt_handler)
 
+    if RUNNING:
+      self.__addConnection(
+        name='dst',
+        _host=config.get('queries-dst.host'),
+        _port=int(config.get('queries-dst.port')),
+        _username=config.get('queries-dst.username'),
+        _user=config.get('queries-dst.username'),
+        _catalog='system',
+        _schema='runtime',
+        _password=config.get('queries-dst.password'),
+        _https=config.get('queries-dst.ssl').lower() in ['true', '1'],
+        _validate_cert=config.get('queries-dst.ssl-validate-cert').lower() in ['true', '1'])
+
+    if self.using_blackhole_catalog:
+      self.__validateBlackholeCatalog(config)
+      
     src = config.get('queries-src.type')
 
     if RUNNING and src == 'sep':
@@ -616,19 +642,6 @@ class QueryReplay:
     if RUNNING and src == 'pipe-delimited-file':
       self.__retrieveQueryHistoryFromFile(
         _filename=config.get('queries-src.filename'), _delimiter='|')
-
-    if RUNNING:
-      self.__addConnection(
-        name='dst',
-        _host=config.get('queries-dst.host'),
-        _port=int(config.get('queries-dst.port')),
-        _username=config.get('queries-dst.username'),
-        _user=config.get('queries-dst.username'),
-        _catalog='system',
-        _schema='runtime',
-        _password=config.get('queries-dst.password'),
-        _https=config.get('queries-dst.ssl').lower() in ['true', '1'],
-        _validate_cert=config.get('queries-dst.ssl-validate-cert').lower() in ['true', '1'])
 
     if RUNNING:
       self.__runQueries(config)
