@@ -26,8 +26,10 @@ from rich.progress import TextColumn
 from rich.progress import SpinnerColumn 
 from rich.progress import TimeElapsedColumn 
 from rich.progress import MofNCompleteColumn
-
 import functools
+import warnings
+
+warnings.filterwarnings('ignore')
 
 def synchronized(lock):
   """ Synchronization decorator """
@@ -112,6 +114,7 @@ class QueryReplay:
     queries_src_host = config.get('queries-src.host')
     queries_src_port = config.get('queries-src.port')
     queries_src_ssl = config.get('queries-src.ssl')
+    queries_src_ssl_validate_cert = config.get('queries-src.ssl-validate-cert')
     queries_src_username = config.get('queries-src.username')
     queries_src_password = config.get('queries-src.password')
     queries_src_queries_table = config.get('queries-src.insights-queries-table')
@@ -120,6 +123,7 @@ class QueryReplay:
     queries_dst_host = config.get('queries-dst.host')
     queries_dst_port = config.get('queries-dst.port')
     queries_dst_ssl = config.get('queries-dst.ssl')
+    queries_dst_ssl_validate_cert = config.get('queries-dst.ssl-validate-cert')
     queries_dst_username = config.get('queries-dst.username')
     queries_dst_password = config.get('queries-dst.password')
     queries_dst_unique_connection_per_query = config.get('queries-dst.unique-connection-per-query')
@@ -173,6 +177,9 @@ class QueryReplay:
       if queries_src_ssl is not None:
         logging.debug("configuration ignored: queries-src.ssl will not be used")
 
+      if queries_src_ssl_validate_cert is not None:
+        logging.debug("configuration ignored: queries-src.ssl-validate-cert will not be used")
+
       if queries_src_username is not None:
         logging.debug("configuration ignored: queries-src.username will not be used")
 
@@ -205,7 +212,15 @@ class QueryReplay:
         queries_src_ssl = 'false'
         logging.debug("configuration default: setting queries-src.ssl to false")
       elif queries_src_ssl.lower() not in ['true', 'false', '1', '0']:
-        logging.error("configuration invalid: queries_src_ssl is '" + queries_src_ssl  + "', valid values are 'true', 'false', '1', or '0'")
+        logging.error("configuration invalid: queries-src.ssl is '" + queries_src_ssl  + "', valid values are 'true', 'false', '1', or '0'")
+        validConfig = False
+
+      if queries_src_ssl_validate_cert is None:
+        config['queries-src.ssl-validate-cert'] = 'true'
+        queries_src_ssl_validate_cert = 'true'
+        logging.debug("configuration default: setting queries-src.ssl-validate-cert to true")
+      elif queries_src_ssl_validate_cert.lower() not in ['true', 'false', '1', '0']:
+        logging.error("configuration invalid: queries-src.ssl-validate-cert is '" + queries_src_ssl_validate_cert  + "', valid values are 'true', 'false', '1', or '0'")
         validConfig = False
 
       if queries_src_ssl.lower() in ['true', '1']:
@@ -260,7 +275,15 @@ class QueryReplay:
       queries_dst_ssl = 'false'
       logging.debug("configuration default: setting queries-dst.ssl to false")
     elif queries_dst_ssl.lower() not in ['true', 'false', '1', '0']:
-      logging.error("configuration invalid: queries_dst_ssl is '" + queries_dst_ssl  + "', valid values are 'true', 'false', '1', or '0'")
+      logging.error("configuration invalid: queries-dst.ssl is '" + queries_dst_ssl  + "', valid values are 'true', 'false', '1', or '0'")
+      validConfig = False
+
+    if queries_dst_ssl_validate_cert is None:
+      config['queries-dst.ssl-validate-cert'] = 'true'
+      queries_dst_ssl_validate_cert = 'true'
+      logging.debug("configuration default: setting queries-dst.ssl-validate-cert to true")
+    elif queries_dst_ssl_validate_cert.lower() not in ['true', 'false', '1', '0']:
+      logging.error("configuration invalid: queries-dst.ssl-validate-cert is '" + queries_dst_ssl_validate_cert  + "', valid values are 'true', 'false', '1', or '0'")
       validConfig = False
 
     if queries_dst_ssl.lower() in ['true', '1']:
@@ -302,7 +325,7 @@ class QueryReplay:
     if not validConfig:
       os._exit(1)
 
-  def __addConnection(self, name: str, _host: str, _port: int, _username: str, _user: str, _catalog: str, _schema: str, _password: str = None, _https: bool = False):
+  def __addConnection(self, name: str, _host: str, _port: int, _username: str, _user: str, _catalog: str, _schema: str, _password: str = None, _https: bool = False, _validate_cert: bool = True):
     logging.debug("adding connection: " + name)
     http_scheme = 'https' if _https else 'http'
     conn = None
@@ -323,6 +346,8 @@ class QueryReplay:
         catalog=_catalog,
         schema=_schema,
         http_scheme=http_scheme)
+    if not _validate_cert:
+      conn._http_session.verify = False
     self.connections[name] = conn
     return conn
 
@@ -341,17 +366,21 @@ class QueryReplay:
 
   def __retrieveQueryHistoryFromSEP(self, table: str, startTime: str, endTime: str, conn: str = 'src'):
     logging.info("retrieving query history")
-    cur = self.__getConnection(conn).cursor()
-    cur.execute(
-      "SELECT query_id, catalog, schema, principal, usr, query, query_type, to_unixtime(create_time) as create_time, end_time " +
-      "FROM " + table + " " +
-      "WHERE create_time >= timestamp '" + startTime + "' " +
-      "AND create_time <= timestamp '" + endTime + "' " +
-      "AND query_type = 'SELECT' " +
-      "ORDER BY create_time")
-    self.queries = cur.fetchall()
-    self.total_queries = len(self.queries)
-    logging.info(str(len(self.queries)) + " queries to be run")
+    try:
+      cur = self.__getConnection(conn).cursor()
+      cur.execute(
+        "SELECT query_id, catalog, schema, principal, usr, query, query_type, to_unixtime(create_time) as create_time, end_time " +
+        "FROM " + table + " " +
+        "WHERE create_time >= timestamp '" + startTime + "' " +
+        "AND create_time <= timestamp '" + endTime + "' " +
+        "AND query_type = 'SELECT' " +
+        "ORDER BY create_time")
+      self.queries = cur.fetchall()
+      self.total_queries = len(self.queries)
+      logging.info(str(len(self.queries)) + " queries to be run")
+    except Exception as error:
+      logging.error(error)
+    
 
   def __retrieveQueryHistoryFromCSVFile(self, filename: str):
     logging.info("loading query history from CSV file " + filename)
@@ -386,7 +415,8 @@ class QueryReplay:
           _catalog=catalog,
           _schema=schema,
           _password=config.get('queries-dst.password'),
-          _https=config.get('queries-dst.ssl').lower() in ['true', '1'])
+          _https=config.get('queries-dst.ssl').lower() in ['true', '1'],
+          _validate_cert=config.get('queries-dst.ssl-validate-cert').lower() in ['true', '1'])
       else:
         conn = self.__getConnection('dst')
 
@@ -400,7 +430,10 @@ class QueryReplay:
         logging.debug(threadName + ": setting catalog '" + catalog + "' and schema '" + schema + "'" )
         if not schema:
           schema = 'system'
-        cur.execute('USE ' + catalog + '.' + schema)
+        try:
+          cur.execute('USE ' + catalog + '.' + schema)
+        except Exception as error:
+          logging.error(error)
 
       if blackholeSchema:
         query = 'CREATE TABLE ' + blackholeSchema + '.' + threadName.replace(' ', '') + ' AS \n' + query
@@ -420,8 +453,12 @@ class QueryReplay:
           logging.info(threadName + ": cancelling query")
           cur.close()
           break
-        rows = cur.fetchmany(1000)
-        if not rows:
+        try:
+          rows = cur.fetchmany(1000)
+          if not rows:
+            break
+        except Exception as error:
+          logging.error(error)
           break
 
     if RUNNING:
@@ -444,8 +481,11 @@ class QueryReplay:
       if config.get('queries-dst.blackhole-catalog'):
         blackholeSchema = config.get('queries-dst.blackhole-catalog') + "." + "test_" + datetime.now().strftime("%Y%m%d_%H%M%S")
         logging.debug("create blackhole schema: " + blackholeSchema)
-        cur = self.__getConnection('dst').cursor()
-        cur.execute('CREATE SCHEMA ' + blackholeSchema)
+        try:
+          cur = self.__getConnection('dst').cursor()
+          cur.execute('CREATE SCHEMA ' + blackholeSchema)
+        except Exception as error:
+          logging.error(error)
 
       threads = list()
       runQueriesSequentially = False
@@ -556,7 +596,8 @@ class QueryReplay:
         _catalog='system',
         _schema='runtime',
         _password=config.get('queries-src.password'),
-        _https=config.get('queries-src.ssl').lower() in ['true', '1'])
+        _https=config.get('queries-src.ssl').lower() in ['true', '1'],
+        _validate_cert=config.get('queries-src.ssl-validate-cert').lower() in ['true', '1'])
 
       self.__retrieveQueryHistoryFromSEP(
         table=config.get('queries-src.insights-queries-table'),
@@ -586,7 +627,8 @@ class QueryReplay:
         _catalog='system',
         _schema='runtime',
         _password=config.get('queries-dst.password'),
-        _https=bool(config.get('queries-dst.ssl')))
+        _https=config.get('queries-dst.ssl').lower() in ['true', '1'],
+        _validate_cert=config.get('queries-dst.ssl-validate-cert').lower() in ['true', '1'])
 
     if RUNNING:
       self.__runQueries(config)
